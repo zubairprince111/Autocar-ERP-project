@@ -48,6 +48,7 @@ export default function Services() {
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
     return [...services].reverse().filter((s) =>
+      s.carPlate !== "SALE" &&
       (filter === "All" || s.status === filter) &&
       (
         s.carPlate.toLowerCase().includes(q) ||
@@ -58,12 +59,15 @@ export default function Services() {
     );
   }, [services, filter, query]);
 
-  const counts = useMemo(() => ({
-    All: services.length,
-    Pending: services.filter((s) => s.status === "Pending").length,
-    "In Progress": services.filter((s) => s.status === "In Progress").length,
-    Completed: services.filter((s) => s.status === "Completed").length,
-  }), [services]);
+  const counts = useMemo(() => {
+    const serviceOnly = services.filter(s => s.carPlate !== "SALE");
+    return {
+      All: serviceOnly.length,
+      Pending: serviceOnly.filter((s) => s.status === "Pending").length,
+      "In Progress": serviceOnly.filter((s) => s.status === "In Progress").length,
+      Completed: serviceOnly.filter((s) => s.status === "Completed").length,
+    };
+  }, [services]);
 
   const addPart = () => {
     const prod = products.find((p) => p.id === selectedProduct);

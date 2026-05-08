@@ -1,3 +1,4 @@
+import { useState, useMemo } from "react";
 import { useApp, Product } from "@/context/AppContext";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Pencil, Trash2, Plus, Search, Upload, LayoutGrid, List, ImageIcon } from "lucide-react";
+import { Pencil, Trash2, Plus, Search, Upload, LayoutGrid, List, ImageIcon, X } from "lucide-react";
 import { toast } from "sonner";
 import { fmt } from "@/lib/currency";
 

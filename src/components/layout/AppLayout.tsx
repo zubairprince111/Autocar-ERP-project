@@ -1,6 +1,7 @@
 import { ReactNode, useState, useMemo } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, Package, Wrench, LogOut, Menu, ReceiptText, Shield, Sparkles, Wrench as Logo } from "lucide-react";
+import { LayoutDashboard, Package, Wrench, LogOut, Menu, ReceiptText, Shield, Sparkles } from "lucide-react";
+const Logo = Wrench;
 import { useApp } from "@/context/AppContext";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -52,7 +53,7 @@ function NavItems({ onClick }: { onClick?: () => void }) {
 }
 
 export default function AppLayout({ children }: { children: ReactNode }) {
-  const { logout, profile } = useApp();
+  const { logout, profile, authed } = useApp();
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
   

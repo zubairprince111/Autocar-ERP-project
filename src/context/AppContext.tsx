@@ -159,9 +159,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     // Check active sessions and sets the user
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfile(session.user.id);
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) {
+        fetchProfile(currentUser.id, currentUser.email);
       } else {
         // Load public data for guests
         Promise.all([refreshProducts(), refreshServices()]).finally(() => setLoading(false));
@@ -170,9 +171,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // Listen for changes on auth state (sign in, sign out, etc.)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfile(session.user.id);
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) {
+        fetchProfile(currentUser.id, currentUser.email);
       } else {
         setProfile(null);
         setPermissions([]);
@@ -184,24 +186,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchProfile = async (userId: string) => {
-    const { data: profileData, error: profileError } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
-
-    if (profileError || !profileData) {
-      console.warn("Profile not found or error fetching profile:", profileError);
-      // Fallback: set a minimal profile if auth user exists
-      if (userId) {
-        setProfile({ id: userId, email: user?.email || '', role: 'staff' } as any);
-      }
-    } else {
-      setProfile(profileData);
-      
-      // Fetch permissions for the role
-      const { data: permData } = await supabase
+  const fetchProfile = async (userId: string, email?: string) => {
+    try {
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+  
+      if (profileError || !profileData) {
+        console.warn("Profile not found or error fetching profile:", profileError);
+        // Fallback: set a minimal profile if auth user exists
+        if (userId) {
+          setProfile({ id: userId, email: email || '', role: 'staff' } as any);
+        }
+      } else {
+        setProfile(profileData);
+        
+        // Fetch permissions for the role
+        const { data: permData } = await supabase
         .from('role_permissions')
         .select('permission')
         .eq('role', profileData.role);
@@ -213,7 +216,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (supabase) {
       await Promise.all([refreshProducts(), refreshServices(), refreshTransactions()]);
     }
-    setLoading(false);
+    } catch (e) {
+      console.error("Critical error in fetchProfile:", e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const checkPermission = (permission: string) => {

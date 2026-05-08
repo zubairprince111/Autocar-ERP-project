@@ -32,6 +32,18 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { createClient } from "@supabase/supabase-js";
 
 const PERMISSIONS = [
   { id: "inventory.view", label: "View Inventory", description: "Can see product list and stock levels" },
@@ -50,10 +62,57 @@ export default function AdminSettings() {
     staff: [],
   });
   const [loading, setLoading] = useState(true);
+  const [openAddUser, setOpenAddUser] = useState(false);
+  const [newUser, setNewUser] = useState({ email: "", password: "", role: "staff" as Role });
 
   useEffect(() => {
     fetchData();
   }, []);
+
+  const addUser = async () => {
+    if (!newUser.email || !newUser.password) {
+      toast.error("Email and password are required");
+      return;
+    }
+
+    const loadingToast = toast.loading("Creating user...");
+    try {
+      // Use a temporary client to avoid logging out the current admin session
+      const tempSupabase = createClient(
+        import.meta.env.VITE_SUPABASE_URL,
+        import.meta.env.VITE_SUPABASE_ANON_KEY,
+        { auth: { persistSession: false } }
+      );
+
+      const { data, error } = await tempSupabase.auth.signUp({
+        email: newUser.email,
+        password: newUser.password,
+        options: {
+          data: {
+            role: newUser.role
+          }
+        }
+      });
+
+      if (error) throw error;
+
+      if (data.user) {
+        // Manually update the profile in our DB to ensure role is set correctly 
+        // (The trigger usually handles this, but let's be safe)
+        await supabase
+          .from("profiles")
+          .update({ role: newUser.role })
+          .eq("id", data.user.id);
+        
+        toast.success("User created successfully", { id: loadingToast });
+        setOpenAddUser(false);
+        setNewUser({ email: "", password: "", role: "staff" });
+        fetchData();
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Failed to create user", { id: loadingToast });
+    }
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -155,6 +214,63 @@ export default function AdminSettings() {
           <p className="text-muted-foreground">Manage user roles and system-wide permissions.</p>
         </div>
         <div className="flex gap-2">
+          <Dialog open={openAddUser} onOpenChange={setOpenAddUser}>
+            <DialogTrigger asChild>
+              <Button className="gap-2 shadow-md hover:shadow-lg transition-all">
+                <UserPlus className="h-4 w-4" />
+                Add New User
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>Add New Team Member</DialogTitle>
+                <DialogDescription>
+                  Create a new account for a staff member or manager.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="email">Email address</Label>
+                  <Input 
+                    id="email" 
+                    type="email" 
+                    placeholder="name@autocore.com" 
+                    value={newUser.email}
+                    onChange={(e) => setNewUser({...newUser, email: e.target.value})}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="password">Initial Password</Label>
+                  <Input 
+                    id="password" 
+                    type="password" 
+                    value={newUser.password}
+                    onChange={(e) => setNewUser({...newUser, password: e.target.value})}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="role">Initial Role</Label>
+                  <Select 
+                    value={newUser.role} 
+                    onValueChange={(val) => setNewUser({...newUser, role: val as Role})}
+                  >
+                    <SelectTrigger id="role">
+                      <SelectValue placeholder="Select role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="manager">Manager</SelectItem>
+                      <SelectItem value="staff">Staff</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="ghost" onClick={() => setOpenAddUser(false)}>Cancel</Button>
+                <Button onClick={addUser}>Create Account</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
           <Button variant="outline" onClick={fetchData} disabled={loading}>
             Refresh Data
           </Button>

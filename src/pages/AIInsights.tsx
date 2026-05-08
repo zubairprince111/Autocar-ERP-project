@@ -3,6 +3,7 @@ import { useApp } from "@/context/AppContext";
 import GroqChat from "@/components/GroqChat";
 import { Sparkles, BarChart3, TrendingUp, Package } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { fmt } from "@/lib/currency";
 
 export default function AIInsights() {
   const { transactions, products, services } = useApp();
@@ -31,7 +32,7 @@ export default function AIInsights() {
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Total Revenue</p>
-              <p className="text-xl font-bold">${stats.totalSales.toLocaleString()}</p>
+              <p className="text-xl font-bold">{fmt(stats.totalSales)}</p>
             </div>
           </CardContent>
         </Card>
