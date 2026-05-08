@@ -7,6 +7,7 @@ import Inventory from "./Inventory";
 import Services from "./Services";
 import Transactions from "./Transactions";
 import AdminSettings from "./AdminSettings";
+import AIInsights from "./AIInsights";
 
 const Index = () => {
   const { authed, loading } = useApp();
@@ -39,6 +40,7 @@ const Index = () => {
         <Route path="/inventory" element={<Inventory />} />
         <Route path="/services" element={<Services />} />
         <Route path="/transactions" element={<Transactions />} />
+        <Route path="/ai-insights" element={<AIInsights />} />
         <Route path="/admin" element={<AdminSettings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

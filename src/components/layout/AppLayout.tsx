@@ -1,6 +1,6 @@
 import { ReactNode, useState, useMemo } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, Package, Wrench, LogOut, Menu, ReceiptText, Shield, Wrench as Logo } from "lucide-react";
+import { LayoutDashboard, Package, Wrench, LogOut, Menu, ReceiptText, Shield, Sparkles, Wrench as Logo } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -10,6 +10,7 @@ const navConfig = [
   { to: "/inventory", label: "Inventory", icon: Package, permission: "inventory.view" },
   { to: "/services", label: "Services", icon: Wrench, permission: "services.view" },
   { to: "/transactions", label: "Transactions", icon: ReceiptText, permission: "transactions.view" },
+  { to: "/ai-insights", label: "AI Insights", icon: Sparkles, permission: "admin.view" }, // Only admins see this
   { to: "/admin", label: "Admin Settings", icon: Shield, permission: "admin.view" },
 ];
 
