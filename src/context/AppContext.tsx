@@ -191,8 +191,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .eq('id', userId)
       .single();
 
-    if (profileError) {
-      console.error("Error fetching profile:", profileError);
+    if (profileError || !profileData) {
+      console.warn("Profile not found or error fetching profile:", profileError);
+      // Fallback: set a minimal profile if auth user exists
+      if (userId) {
+        setProfile({ id: userId, email: user?.email || '', role: 'staff' } as any);
+      }
     } else {
       setProfile(profileData);
       
@@ -203,8 +207,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .eq('role', profileData.role);
       
       setPermissions(permData?.map(p => p.permission) || []);
-      
-      // Load initial data
+    }
+    
+    // Always load initial data if we have a connection
+    if (supabase) {
       await Promise.all([refreshProducts(), refreshServices(), refreshTransactions()]);
     }
     setLoading(false);
