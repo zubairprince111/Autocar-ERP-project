@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
 import { useApp, Product } from "@/context/AppContext";
+import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,7 +19,8 @@ import { fmt } from "@/lib/currency";
 const empty = { name: "", category: "", brand: "", stock: 0, price: 0, imageUrl: "" };
 
 export default function Inventory() {
-  const { products, addProduct, updateProduct, deleteProduct, bulkAddProducts } = useApp();
+  const { products, addProduct, updateProduct, deleteProduct, bulkAddProducts, checkPermission } = useApp();
+  const canEdit = checkPermission("inventory.edit");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string>("all");
   const [view, setView] = useState<"table" | "grid">("table");
@@ -105,79 +106,146 @@ export default function Inventory() {
         </div>
 
         <div className="flex gap-2">
-          <Dialog open={openBulk} onOpenChange={setOpenBulk}>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="sm" className="flex-1 sm:flex-none h-9 text-xs sm:text-sm"><Upload className="h-4 w-4 mr-1.5 sm:mr-2" /> Import</Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>Bulk add products</DialogTitle>
-                <DialogDescription>One per line: <code>Name, Category, Stock, Price</code></DialogDescription>
-              </DialogHeader>
-              <Textarea
-                rows={6}
-                placeholder={"Air Filter, Filters, 30, 600\nWiper Blades, Exterior, 20, 950"}
-                value={bulk}
-                onChange={(e) => setBulk(e.target.value)}
-              />
-              <DialogFooter className="gap-2 sm:gap-0">
-                <Button variant="ghost" onClick={() => setOpenBulk(false)}>Cancel</Button>
-                <Button onClick={submitBulk}>Import</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          {canEdit && (
+            <Dialog open={openBulk} onOpenChange={setOpenBulk}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm" className="flex-1 sm:flex-none h-9 text-xs sm:text-sm"><Upload className="h-4 w-4 mr-1.5 sm:mr-2" /> Import</Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Bulk add products</DialogTitle>
+                  <DialogDescription>One per line: <code>Name, Category, Stock, Price</code></DialogDescription>
+                </DialogHeader>
+                <Textarea
+                  rows={6}
+                  placeholder={"Air Filter, Filters, 30, 600\nWiper Blades, Exterior, 20, 950"}
+                  value={bulk}
+                  onChange={(e) => setBulk(e.target.value)}
+                />
+                <DialogFooter className="gap-2 sm:gap-0">
+                  <Button variant="ghost" onClick={() => setOpenBulk(false)}>Cancel</Button>
+                  <Button onClick={submitBulk}>Import</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
 
-          <Dialog open={openForm} onOpenChange={setOpenForm}>
-            <DialogTrigger asChild>
-              <Button size="sm" className="flex-1 sm:flex-none h-9 text-xs sm:text-sm" onClick={openAdd}><Plus className="h-4 w-4 mr-1.5 sm:mr-2" /> Add Item</Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-lg">
-              <DialogHeader>
-                <DialogTitle>{editing ? "Edit product" : "Add product"}</DialogTitle>
-              </DialogHeader>
-              <div className="grid gap-4 py-2">
-                <div className="flex flex-col sm:flex-row items-center gap-4">
-                  <div className="h-20 w-20 rounded-lg bg-secondary overflow-hidden flex items-center justify-center shrink-0">
-                    {form.imageUrl ? (
-                      <img src={form.imageUrl} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      <ImageIcon className="h-6 w-6 text-muted-foreground" />
-                    )}
+          {canEdit && (
+            <Dialog open={openForm} onOpenChange={setOpenForm}>
+              <DialogTrigger asChild>
+                <Button size="sm" className="flex-1 sm:flex-none h-9 text-xs sm:text-sm" onClick={openAdd}><Plus className="h-4 w-4 mr-1.5 sm:mr-2" /> Add Item</Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>{editing ? "Edit product" : "Add product"}</DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-4 py-2">
+                  <div className="flex flex-col sm:flex-row items-center gap-4">
+                    <div className="h-24 w-24 rounded-lg bg-secondary overflow-hidden flex items-center justify-center shrink-0 border-2 border-dashed border-border group relative">
+                      {form.imageUrl ? (
+                        <>
+                          <img src={form.imageUrl} alt="" className="h-full w-full object-cover" />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <Button size="icon" variant="ghost" className="text-white h-8 w-8" onClick={() => setForm({...form, imageUrl: ""})}>
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </>
+                      ) : (
+                        <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                      )}
+                    </div>
+                    <div className="flex-1 w-full space-y-2">
+                      <Label className="text-xs font-semibold">Product Image (Max 2MB)</Label>
+                      <div className="flex gap-2">
+                        <Input 
+                          type="file" 
+                          accept="image/*" 
+                          className="hidden" 
+                          id="img-upload" 
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            
+                            if (file.size > 2 * 1024 * 1024) {
+                              toast.error("File too large", { description: "Maximum size is 2MB" });
+                              return;
+                            }
+
+                            const loadingToast = toast.loading("Uploading image...");
+                            try {
+                              const fileExt = file.name.split('.').pop();
+                              const fileName = `${Math.random()}.${fileExt}`;
+                              const filePath = `products/${fileName}`;
+
+                              const { error: uploadError } = await supabase.storage
+                                .from('product-images')
+                                .upload(filePath, file);
+
+                              if (uploadError) throw uploadError;
+
+                              const { data: { publicUrl } } = supabase.storage
+                                .from('product-images')
+                                .getPublicUrl(filePath);
+
+                              setForm({ ...form, imageUrl: publicUrl });
+                              toast.success("Image uploaded", { id: loadingToast });
+                            } catch (err: any) {
+                              toast.error("Upload failed", { description: err.message, id: loadingToast });
+                            }
+                          }}
+                        />
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          className="w-full h-9 gap-2 shadow-sm"
+                          onClick={() => document.getElementById('img-upload')?.click()}
+                        >
+                          <Upload className="h-4 w-4" />
+                          {form.imageUrl ? "Change Picture" : "Upload Picture"}
+                        </Button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-muted-foreground">Or paste URL:</span>
+                        <Input 
+                          value={form.imageUrl} 
+                          onChange={(e) => setForm({ ...form, imageUrl: e.target.value })} 
+                          placeholder="https://..." 
+                          className="h-7 text-[10px] flex-1 bg-white/50" 
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex-1 w-full space-y-2">
-                    <Label className="text-xs">Image URL</Label>
-                    <Input value={form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })} placeholder="https://..." className="h-9" />
+                  <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                    <div className="space-y-2 col-span-2">
+                      <Label className="text-xs">Name</Label>
+                      <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="h-9" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs">Category</Label>
+                      <Input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="h-9" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs">Brand</Label>
+                      <Input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} className="h-9" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs">Stock</Label>
+                      <Input type="number" value={form.stock} onChange={(e) => setForm({ ...form, stock: Number(e.target.value) })} className="h-9" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs">Price (BDT)</Label>
+                      <Input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} className="h-9" />
+                    </div>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3 sm:gap-4">
-                  <div className="space-y-2 col-span-2">
-                    <Label className="text-xs">Name</Label>
-                    <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="h-9" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs">Category</Label>
-                    <Input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="h-9" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs">Brand</Label>
-                    <Input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} className="h-9" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs">Stock</Label>
-                    <Input type="number" value={form.stock} onChange={(e) => setForm({ ...form, stock: Number(e.target.value) })} className="h-9" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs">Price (BDT)</Label>
-                    <Input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} className="h-9" />
-                  </div>
-                </div>
-              </div>
-              <DialogFooter className="gap-2 sm:gap-0">
-                <Button variant="ghost" onClick={() => setOpenForm(false)}>Cancel</Button>
-                <Button onClick={save}>{editing ? "Save changes" : "Add product"}</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+                <DialogFooter className="gap-2 sm:gap-0">
+                  <Button variant="ghost" onClick={() => setOpenForm(false)}>Cancel</Button>
+                  <Button onClick={save}>{editing ? "Save changes" : "Add product"}</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
         </div>
       </div>
 
@@ -224,17 +292,19 @@ export default function Inventory() {
                     </td>
                     <td className="px-4 py-3 font-medium">{fmt(p.price)}</td>
                     <td className="px-4 py-3 text-right">
-                      <div className="inline-flex gap-1">
-                        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => openEdit(p)}>
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          size="icon" variant="ghost" className="h-8 w-8"
-                          onClick={() => { deleteProduct(p.id); toast.success("Product removed"); }}
-                        >
-                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                        </Button>
-                      </div>
+                      {canEdit && (
+                        <div className="inline-flex gap-1">
+                          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => openEdit(p)}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            size="icon" variant="ghost" className="h-8 w-8"
+                            onClick={() => { deleteProduct(p.id); toast.success("Product removed"); }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                          </Button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -264,14 +334,16 @@ export default function Inventory() {
                   <span className="text-base font-semibold">{fmt(p.price)}</span>
                   <span className="text-xs text-muted-foreground">{p.stock} in stock</span>
                 </div>
-                <div className="flex gap-1 pt-2">
-                  <Button size="sm" variant="outline" className="flex-1" onClick={() => openEdit(p)}>
-                    <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit
-                  </Button>
-                  <Button size="icon" variant="ghost" onClick={() => { deleteProduct(p.id); toast.success("Removed"); }}>
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
-                </div>
+                {canEdit && (
+                  <div className="flex gap-1 pt-2">
+                    <Button size="sm" variant="outline" className="flex-1" onClick={() => openEdit(p)}>
+                      <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit
+                    </Button>
+                    <Button size="icon" variant="ghost" onClick={() => { deleteProduct(p.id); toast.success("Removed"); }}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                )}
               </div>
             </Card>
           ))}

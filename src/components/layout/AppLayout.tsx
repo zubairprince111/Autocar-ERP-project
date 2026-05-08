@@ -1,22 +1,34 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useState, useMemo } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, Package, Wrench, LogOut, Menu, ReceiptText, Wrench as Logo } from "lucide-react";
+import { LayoutDashboard, Package, Wrench, LogOut, Menu, ReceiptText, Shield, Wrench as Logo } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
-const nav = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/inventory", label: "Inventory", icon: Package },
-  { to: "/services", label: "Services", icon: Wrench },
-  { to: "/transactions", label: "Transactions", icon: ReceiptText },
+const navConfig = [
+  { to: "/", label: "Dashboard", icon: LayoutDashboard, permission: "dashboard.view" },
+  { to: "/inventory", label: "Inventory", icon: Package, permission: "inventory.view" },
+  { to: "/services", label: "Services", icon: Wrench, permission: "services.view" },
+  { to: "/transactions", label: "Transactions", icon: ReceiptText, permission: "transactions.view" },
+  { to: "/admin", label: "Admin Settings", icon: Shield, permission: "admin.view" },
 ];
 
 function NavItems({ onClick }: { onClick?: () => void }) {
   const { pathname } = useLocation();
+  const { checkPermission, profile, authed } = useApp();
+
+  const filteredNav = useMemo(() => {
+    return navConfig.filter(item => {
+      if (!authed) return item.to === "/services";
+      if (item.to === "/admin") return profile?.role === 'admin';
+      if (item.to === "/") return true;
+      return checkPermission(item.permission);
+    });
+  }, [checkPermission, profile, authed]);
+
   return (
     <>
-      {nav.map((n) => (
+      {filteredNav.map((n) => (
         <NavLink
           key={n.to}
           to={n.to}
@@ -39,10 +51,11 @@ function NavItems({ onClick }: { onClick?: () => void }) {
 }
 
 export default function AppLayout({ children }: { children: ReactNode }) {
-  const { logout } = useApp();
+  const { logout, profile } = useApp();
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
-  const current = nav.find((n) => n.to === pathname)?.label ?? "Dashboard";
+  
+  const current = navConfig.find((n) => n.to === pathname)?.label ?? "Dashboard";
 
   return (
     <div className="flex h-screen w-full bg-surface">
@@ -54,21 +67,30 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </div>
           <div>
             <p className="text-sm font-semibold leading-none">AutoCore ERP</p>
-            <p className="text-xs text-muted-foreground mt-1">Parts & Service</p>
+            <p className="text-xs text-muted-foreground mt-1 text-primary/80 font-medium">Real-time DB Active</p>
           </div>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">
           <NavItems />
         </nav>
         <div className="border-t border-border p-3">
-          <Button
-            variant="ghost"
-            className="w-full justify-start text-muted-foreground hover:text-foreground"
-            onClick={logout}
-          >
-            <LogOut className="h-4 w-4 mr-2" />
-            Sign out
-          </Button>
+          {authed ? (
+            <Button
+              variant="ghost"
+              className="w-full justify-start text-muted-foreground hover:text-foreground"
+              onClick={logout}
+            >
+              <LogOut className="h-4 w-4 mr-2" />
+              Sign out
+            </Button>
+          ) : (
+            <NavLink to="/login" className="block">
+              <Button variant="secondary" className="w-full justify-start text-muted-foreground hover:text-foreground">
+                <LogOut className="h-4 w-4 mr-2 rotate-180" />
+                Sign In
+              </Button>
+            </NavLink>
+          )}
         </div>
       </aside>
 
@@ -114,16 +136,29 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </div>
           
           <div className="flex items-center gap-3">
-            <div className="text-right hidden sm:block">
-              <p className="text-sm font-medium leading-none">Admin</p>
-              <p className="text-xs text-muted-foreground mt-1">Owner</p>
-            </div>
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground shrink-0">
-              A
-            </div>
+            {authed ? (
+              <>
+                <div className="text-right hidden sm:block">
+                  <p className="text-sm font-medium leading-none">{profile?.email?.split('@')[0] || 'User'}</p>
+                  <p className="text-[10px] text-muted-foreground mt-1 uppercase tracking-wider font-bold">
+                    {profile?.role || 'Staff'}
+                  </p>
+                </div>
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary border border-primary/20 text-sm font-bold shrink-0">
+                  {profile?.email?.[0].toUpperCase() || 'U'}
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground hidden sm:inline">Guest Mode</span>
+                <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center">
+                  <Logo className="h-4 w-4 text-muted-foreground opacity-50" />
+                </div>
+              </div>
+            )}
           </div>
         </header>
-        <main className="flex-1 overflow-y-auto p-4 lg:p-8">{children}</main>
+        <main className="flex-1 overflow-y-auto p-4 lg:p-8 bg-surface/30">{children}</main>
       </div>
     </div>
   );

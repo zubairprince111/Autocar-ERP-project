@@ -1,20 +1,24 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useApp } from "@/context/AppContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { toast } from "sonner";
 import { Wrench } from "lucide-react";
 
 export default function Login() {
   const { login } = useApp();
-  const [u, setU] = useState("");
-  const [p, setP] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!login(u, p)) {
-      toast.error("Invalid credentials", { description: "Use admin / admin to sign in." });
+    setLoading(true);
+    try {
+      await login(email, password);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -41,18 +45,52 @@ export default function Login() {
           className="space-y-4 rounded-2xl border border-white/20 bg-background/80 p-8 backdrop-blur-xl shadow-2xl"
         >
           <div className="space-y-2">
-            <Label htmlFor="u" className="text-foreground/80">Username</Label>
-            <Input id="u" value={u} onChange={(e) => setU(e.target.value)} placeholder="admin" autoFocus className="bg-white/50 border-white/30" />
+            <Label htmlFor="email" className="text-foreground/80">Email</Label>
+            <Input 
+              id="email" 
+              type="email"
+              value={email} 
+              onChange={(e) => setEmail(e.target.value)} 
+              placeholder="admin@autocore.com" 
+              autoFocus 
+              className="bg-white/50 border-white/30" 
+              required
+            />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="p" className="text-foreground/80">Password</Label>
-            <Input id="p" type="password" value={p} onChange={(e) => setP(e.target.value)} placeholder="admin" className="bg-white/50 border-white/30" />
+            <Label htmlFor="password" className="text-foreground/80">Password</Label>
+            <Input 
+              id="password" 
+              type="password" 
+              value={password} 
+              onChange={(e) => setPassword(e.target.value)} 
+              placeholder="••••••••" 
+              className="bg-white/50 border-white/30" 
+              required
+            />
           </div>
-          <Button type="submit" className="w-full h-11 text-base font-semibold shadow-lg shadow-primary/20">
-            Sign in
+          <Button type="submit" disabled={loading} className="w-full h-11 text-base font-semibold shadow-lg shadow-primary/20">
+            {loading ? "Signing in..." : "Sign in"}
           </Button>
+
+          <div className="relative py-2">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-white/10" />
+            </div>
+            <div className="relative flex justify-center text-[10px] uppercase font-bold text-white/40">
+              <span className="bg-transparent px-2">Workflow Shortcut</span>
+            </div>
+          </div>
+
+          <Link to="/services" className="block w-full">
+            <Button variant="outline" type="button" className="w-full h-11 bg-white/10 border-white/20 text-white hover:bg-white/20">
+              <Wrench className="h-4 w-4 mr-2" />
+              Public Service Entry
+            </Button>
+          </Link>
+
           <p className="text-center text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
-            Demo credentials: <span className="text-primary underline decoration-primary/30">admin / admin</span>
+            Real-time Database Connection Active
           </p>
         </form>
       </div>

@@ -1,4 +1,15 @@
-import { createContext, useContext, useMemo, useState, ReactNode } from "react";
+import { createContext, useContext, useMemo, useState, ReactNode, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
+import { User } from "@supabase/supabase-js";
+import { toast } from "sonner";
+
+export type Role = "admin" | "manager" | "staff";
+
+export type Profile = {
+  id: string;
+  email: string;
+  role: Role;
+};
 
 export type Product = {
   id: string;
@@ -28,20 +39,40 @@ export type ServiceTicket = {
   createdAt: string;
 };
 
+export type Transaction = {
+  id: number;
+  ticketId?: string;
+  type: "Service" | "Sale";
+  customerName: string;
+  description: string;
+  amount: number;
+  createdAt: string;
+};
+
 type AppContextType = {
+  user: User | null;
+  profile: Profile | null;
   authed: boolean;
-  login: (u: string, p: string) => boolean;
-  logout: () => void;
+  loading: boolean;
+  login: (email: string, pass: string) => Promise<boolean>;
+  logout: () => Promise<void>;
+  checkPermission: (permission: string) => boolean;
   products: Product[];
-  addProduct: (p: Omit<Product, "id"> & { id?: string }) => void;
-  updateProduct: (id: string, p: Partial<Product>) => void;
-  deleteProduct: (id: string) => void;
-  bulkAddProducts: (rows: Omit<Product, "id" | "imageUrl">[]) => void;
+  refreshProducts: () => Promise<void>;
+  addProduct: (p: Omit<Product, "id"> & { id?: string }) => Promise<void>;
+  updateProduct: (id: string, p: Partial<Product>) => Promise<void>;
+  deleteProduct: (id: string) => Promise<void>;
+  bulkAddProducts: (rows: Omit<Product, "id" | "imageUrl">[]) => Promise<void>;
   services: ServiceTicket[];
-  addService: (s: Omit<ServiceTicket, "ticketId" | "createdAt">) => void;
-  updateService: (id: string, s: Partial<ServiceTicket>) => void;
-  deleteService: (id: string) => void;
-  consumeStock: (productName: string, qty: number) => void;
+  refreshServices: () => Promise<void>;
+  addService: (s: Omit<ServiceTicket, "ticketId" | "createdAt">) => Promise<void>;
+  updateService: (id: string, s: Partial<ServiceTicket>) => Promise<void>;
+  deleteService: (id: string) => Promise<void>;
+  consumeStock: (productName: string, qty: number) => Promise<void>;
+  transactions: Transaction[];
+  refreshTransactions: () => Promise<void>;
+  addTransaction: (t: Omit<Transaction, "id" | "createdAt">) => Promise<void>;
+  deleteTransaction: (id: number) => Promise<void>;
 };
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -49,83 +80,300 @@ const AppContext = createContext<AppContextType | null>(null);
 const img = (q: string) =>
   `https://images.unsplash.com/${q}?auto=format&fit=crop&w=400&q=80`;
 
-const initialProducts: Product[] = [
-  { id: "P101", name: "Brake Pads (Ceramic)", category: "Brakes", brand: "Bosch", stock: 45, price: 1200, imageUrl: img("photo-1486006920555-c77dcf18193c") },
-  { id: "P102", name: "Synthetic Engine Oil 5W-30", category: "Fluids", brand: "Mobil 1", stock: 12, price: 3500, imageUrl: img("photo-1635764857616-3a8a52aef0c8") },
-  { id: "P103", name: "Spark Plugs (Set of 4)", category: "Ignition", brand: "NGK", stock: 8, price: 800, imageUrl: img("photo-1632823471565-1ec2c1d2f0cf") },
-  { id: "P104", name: "Air Filter", category: "Filters", brand: "K&N", stock: 32, price: 950, imageUrl: img("photo-1605164599901-db7f68c4b3a4") },
-  { id: "P105", name: "Cabin Filter", category: "Filters", brand: "Mann", stock: 5, price: 1100, imageUrl: img("photo-1581235720704-06d3acfcb36f") },
-  { id: "P106", name: "Wiper Blades (Pair)", category: "Exterior", brand: "Bosch", stock: 27, price: 1450, imageUrl: img("photo-1617886322207-6f504e7472c5") },
-  { id: "P107", name: "Car Battery 12V 60Ah", category: "Electrical", brand: "Amaron", stock: 9, price: 11500, imageUrl: img("photo-1619725002198-6a689b72f41d") },
-  { id: "P108", name: "Headlight Bulb H4", category: "Lighting", brand: "Philips", stock: 22, price: 650, imageUrl: img("photo-1485463611174-f302f6a5c1c9") },
-  { id: "P109", name: "Coolant 1L", category: "Fluids", brand: "Prestone", stock: 18, price: 850, imageUrl: img("photo-1632823469850-1b7b1be9a4c4") },
-  { id: "P110", name: "Brake Fluid DOT 4", category: "Fluids", brand: "ATE", stock: 14, price: 700, imageUrl: img("photo-1486262715619-67b85e0b08d3") },
-  { id: "P111", name: "Timing Belt Kit", category: "Engine", brand: "Gates", stock: 4, price: 6800, imageUrl: img("photo-1632823471406-4c5b1e3aa1bb") },
-  { id: "P112", name: "Shock Absorber (Front)", category: "Suspension", brand: "Monroe", stock: 11, price: 5400, imageUrl: img("photo-1486006920555-c77dcf18193c") },
-  { id: "P113", name: "Alloy Wheel 16\"", category: "Wheels", brand: "Enkei", stock: 6, price: 14500, imageUrl: img("photo-1626668893632-6f3a4466d22f") },
-  { id: "P114", name: "Tire 195/65 R15", category: "Tires", brand: "Michelin", stock: 24, price: 8900, imageUrl: img("photo-1449965408869-eaa3f722e40d") },
-  { id: "P115", name: "Clutch Plate Kit", category: "Transmission", brand: "Exedy", stock: 3, price: 9200, imageUrl: img("photo-1632823469850-1b7b1be9a4c4") },
-  { id: "P116", name: "Fuel Pump", category: "Engine", brand: "Denso", stock: 7, price: 4200, imageUrl: img("photo-1632823471565-1ec2c1d2f0cf") },
-];
-
-const initialServices: ServiceTicket[] = [
-  { ticketId: "S001", carPlate: "DHA-11-2233", customer: "Rahim Uddin", phone: "01711-223344", issue: "Oil Change & Inspection", status: "Completed", mechanic: "Imran K.", partsUsed: [{ name: "Synthetic Engine Oil 5W-30", qty: 1, price: 3500 }], laborCost: 1000, totalCost: 4500, createdAt: "2026-04-28" },
-  { ticketId: "S002", carPlate: "DHA-22-9911", customer: "Sadia Khan", phone: "01911-887766", issue: "Front brake pads replacement", status: "Completed", mechanic: "Anwar H.", partsUsed: [{ name: "Brake Pads (Ceramic)", qty: 2, price: 1200 }, { name: "Brake Fluid DOT 4", qty: 1, price: 700 }], laborCost: 1500, totalCost: 4600, createdAt: "2026-04-30" },
-  { ticketId: "S003", carPlate: "CTG-14-5621", customer: "Tanvir Ahmed", phone: "01611-445566", issue: "Engine misfire — replace plugs & filters", status: "In Progress", mechanic: "Imran K.", partsUsed: [{ name: "Spark Plugs (Set of 4)", qty: 1, price: 800 }, { name: "Air Filter", qty: 1, price: 950 }], laborCost: 1800, totalCost: 3550, createdAt: "2026-05-02" },
-  { ticketId: "S004", carPlate: "DHA-31-7788", customer: "Mehedi Hasan", phone: "01511-998877", issue: "Battery dead — replace", status: "Completed", mechanic: "Karim S.", partsUsed: [{ name: "Car Battery 12V 60Ah", qty: 1, price: 11500 }], laborCost: 800, totalCost: 12300, createdAt: "2026-05-03" },
-  { ticketId: "S005", carPlate: "SYL-09-3344", customer: "Nusrat J.", phone: "01811-112233", issue: "Headlight not working", status: "Completed", mechanic: "Anwar H.", partsUsed: [{ name: "Headlight Bulb H4", qty: 2, price: 650 }], laborCost: 500, totalCost: 1800, createdAt: "2026-05-03" },
-  { ticketId: "S006", carPlate: "DHA-44-1100", customer: "Faisal R.", phone: "01711-334455", issue: "Suspension noise — check & replace", status: "Pending", mechanic: "Karim S.", partsUsed: [], laborCost: 0, totalCost: 0, createdAt: "2026-05-04" },
-  { ticketId: "S007", carPlate: "DHA-77-2244", customer: "Ayesha Siddika", phone: "01911-665544", issue: "AC not cooling — cabin filter", status: "Completed", mechanic: "Imran K.", partsUsed: [{ name: "Cabin Filter", qty: 1, price: 1100 }], laborCost: 700, totalCost: 1800, createdAt: "2026-05-04" },
-  { ticketId: "S008", carPlate: "DHA-55-9988", customer: "Rezwan A.", phone: "01611-776655", issue: "Tire replacement (all 4)", status: "In Progress", mechanic: "Karim S.", partsUsed: [{ name: "Tire 195/65 R15", qty: 4, price: 8900 }], laborCost: 2000, totalCost: 37600, createdAt: "2026-05-05" },
-];
-
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [authed, setAuthed] = useState(false);
-  const [products, setProducts] = useState<Product[]>(initialProducts);
-  const [services, setServices] = useState<ServiceTicket[]>(initialServices);
+  const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [permissions, setPermissions] = useState<string[]>([]);
+  
+  const [products, setProducts] = useState<Product[]>([]);
+  const [services, setServices] = useState<ServiceTicket[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+
+  const refreshProducts = async () => {
+    if (!supabase) return;
+    const { data, error } = await supabase.from('products').select('*').order('created_at', { ascending: false });
+    if (error) {
+      toast.error("Failed to fetch products");
+    } else {
+      setProducts(data.map(p => ({
+        id: p.id,
+        name: p.name,
+        category: p.category,
+        brand: p.brand,
+        stock: p.stock,
+        price: p.price,
+        imageUrl: p.image_url || img("photo-1486006920555-c77dcf18193c")
+      })));
+    }
+  };
+
+  const refreshServices = async () => {
+    if (!supabase) return;
+    const { data, error } = await supabase.from('services').select('*').order('created_at', { ascending: false });
+    if (error) {
+      toast.error("Failed to fetch services");
+    } else {
+      setServices(data.map(s => ({
+        ticketId: s.ticket_id,
+        carPlate: s.car_plate,
+        customer: s.customer,
+        phone: s.phone,
+        issue: s.issue,
+        mechanic: s.mechanic,
+        status: s.status as ServiceStatus,
+        partsUsed: s.parts_used,
+        laborCost: s.labor_cost,
+        totalCost: s.total_cost,
+        createdAt: s.created_at.slice(0, 10)
+      })));
+    }
+  };
+
+  const refreshTransactions = async () => {
+    if (!supabase) return;
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      toast.error("Failed to fetch transactions");
+    } else {
+      setTransactions(data.map(t => ({
+        id: t.id,
+        ticketId: t.ticket_id,
+        type: t.type as "Service" | "Sale",
+        customerName: t.customer_name,
+        description: t.description,
+        amount: Number(t.amount),
+        createdAt: new Date(t.created_at).toLocaleDateString()
+      })));
+    }
+  };
+
+  useEffect(() => {
+    if (!supabase) {
+      setLoading(false);
+      return;
+    }
+    // Check active sessions and sets the user
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        fetchProfile(session.user.id);
+      } else {
+        // Load public data for guests
+        Promise.all([refreshProducts(), refreshServices()]).finally(() => setLoading(false));
+      }
+    });
+
+    // Listen for changes on auth state (sign in, sign out, etc.)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        fetchProfile(session.user.id);
+      } else {
+        setProfile(null);
+        setPermissions([]);
+        // Load public data for guests
+        Promise.all([refreshProducts(), refreshServices()]).finally(() => setLoading(false));
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const fetchProfile = async (userId: string) => {
+    const { data: profileData, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    if (profileError) {
+      console.error("Error fetching profile:", profileError);
+    } else {
+      setProfile(profileData);
+      
+      // Fetch permissions for the role
+      const { data: permData } = await supabase
+        .from('role_permissions')
+        .select('permission')
+        .eq('role', profileData.role);
+      
+      setPermissions(permData?.map(p => p.permission) || []);
+      
+      // Load initial data
+      await Promise.all([refreshProducts(), refreshServices(), refreshTransactions()]);
+    }
+    setLoading(false);
+  };
+
+  const checkPermission = (permission: string) => {
+    if (profile?.role === 'admin') return true;
+    return permissions.includes(permission) || permissions.includes('all');
+  };
 
   const value = useMemo<AppContextType>(() => {
-    const nextProductId = () =>
-      "P" + (200 + products.length + Math.floor(Math.random() * 90)).toString();
-    const nextTicketId = () =>
-      "S" + String(services.length + 1).padStart(3, "0");
-    const today = () => new Date().toISOString().slice(0, 10);
-
     return {
-      authed,
-      login: (u, p) => {
-        if (u === "admin" && p === "admin") { setAuthed(true); return true; }
-        return false;
+      user,
+      profile,
+      authed: !!user,
+      loading,
+      login: async (email, pass) => {
+        const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
+        if (error) {
+          toast.error("Login failed", { description: error.message });
+          return false;
+        }
+        toast.success("Logged in successfully");
+        return true;
       },
-      logout: () => setAuthed(false),
+      logout: async () => {
+        await supabase.auth.signOut();
+        toast.success("Logged out successfully");
+      },
+      checkPermission,
       products,
-      addProduct: (p) =>
-        setProducts((prev) => [...prev, { id: p.id || nextProductId(), ...p } as Product]),
-      updateProduct: (id, patch) =>
-        setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p))),
-      deleteProduct: (id) => setProducts((prev) => prev.filter((p) => p.id !== id)),
-      bulkAddProducts: (rows) =>
-        setProducts((prev) => [
-          ...prev,
-          ...rows.map((r, i) => ({
-            id: "P" + (300 + prev.length + i).toString(),
-            imageUrl: img("photo-1486006920555-c77dcf18193c"),
-            ...r,
-          })),
-        ]),
+      refreshProducts,
+      addProduct: async (p) => {
+        const id = p.id || "P" + Math.floor(Math.random() * 10000);
+        const { error } = await supabase.from('products').insert([{
+          id,
+          name: p.name,
+          category: p.category,
+          brand: p.brand,
+          stock: p.stock,
+          price: p.price,
+          image_url: p.imageUrl
+        }]);
+        if (error) throw error;
+        await refreshProducts();
+      },
+      updateProduct: async (id, patch) => {
+        const { error } = await supabase.from('products').update({
+          name: patch.name,
+          category: patch.category,
+          brand: patch.brand,
+          stock: patch.stock,
+          price: patch.price,
+          image_url: patch.imageUrl
+        }).eq('id', id);
+        if (error) throw error;
+        await refreshProducts();
+      },
+      deleteProduct: async (id) => {
+        const { error } = await supabase.from('products').delete().eq('id', id);
+        if (error) throw error;
+        await refreshProducts();
+      },
+      bulkAddProducts: async (rows) => {
+        const insertRows = rows.map((r, i) => ({
+          id: "P" + (Date.now() + i),
+          name: r.name,
+          category: r.category,
+          brand: r.brand,
+          stock: r.stock,
+          price: r.price,
+          image_url: img("photo-1486006920555-c77dcf18193c")
+        }));
+        const { error } = await supabase.from('products').insert(insertRows);
+        if (error) throw error;
+        await refreshProducts();
+      },
       services,
-      addService: (s) =>
-        setServices((prev) => [...prev, { ticketId: nextTicketId(), createdAt: today(), ...s }]),
-      updateService: (id, patch) =>
-        setServices((prev) => prev.map((s) => (s.ticketId === id ? { ...s, ...patch } : s))),
-      deleteService: (id) =>
-        setServices((prev) => prev.filter((s) => s.ticketId !== id)),
-      consumeStock: (name, qty) =>
-        setProducts((prev) =>
-          prev.map((p) => (p.name === name ? { ...p, stock: Math.max(0, p.stock - qty) } : p))
-        ),
+      refreshServices,
+      addService: async (s) => {
+        const ticketId = "S" + String(services.length + 1).padStart(3, "0");
+        const { error } = await supabase.from('services').insert([{
+          ticket_id: ticketId,
+          car_plate: s.carPlate,
+          customer: s.customer,
+          phone: s.phone,
+          issue: s.issue,
+          mechanic: s.mechanic,
+          status: s.status,
+          parts_used: s.partsUsed,
+          labor_cost: s.laborCost,
+          total_cost: s.totalCost
+        }]);
+        if (error) throw error;
+
+        // Auto-add to transactions table
+        const { error: txError } = await supabase.from('transactions').insert([{
+          ticket_id: ticketId,
+          type: s.carPlate === "SALE" ? "Sale" : "Service",
+          customer_name: s.customer || "Walk-in",
+          description: s.issue,
+          amount: s.totalCost
+        }]);
+        if (txError) console.error("Transaction log failed", txError);
+
+        await refreshServices();
+        await refreshTransactions();
+      },
+      updateService: async (id, patch) => {
+        const { error } = await supabase.from('services').update({
+          car_plate: patch.carPlate,
+          customer: patch.customer,
+          phone: patch.phone,
+          issue: patch.issue,
+          mechanic: patch.mechanic,
+          status: patch.status,
+          parts_used: patch.partsUsed,
+          labor_cost: patch.laborCost,
+          total_cost: patch.totalCost
+        }).eq('ticket_id', id);
+        if (error) throw error;
+
+        // Sync with transactions if amount or desc changed
+        if (patch.totalCost !== undefined || patch.issue || patch.customer) {
+          const { error: txError } = await supabase.from('transactions').update({
+            customer_name: patch.customer,
+            description: patch.issue,
+            amount: patch.totalCost
+          }).eq('ticket_id', id);
+          if (txError) console.warn("Failed to sync transaction record", txError);
+          await refreshTransactions();
+        }
+
+        await refreshServices();
+      },
+      deleteService: async (id) => {
+        const { error } = await supabase.from('services').delete().eq('ticket_id', id);
+        if (error) throw error;
+        await refreshServices();
+      },
+      consumeStock: async (name, qty) => {
+        const product = products.find(p => p.name === name);
+        if (product) {
+          const newStock = Math.max(0, product.stock - qty);
+          const { error } = await supabase.from('products').update({ stock: newStock }).eq('name', name);
+          if (error) throw error;
+          await refreshProducts();
+        }
+      },
+      transactions,
+      refreshTransactions,
+      addTransaction: async (t) => {
+        const { error } = await supabase.from('transactions').insert([{
+          ticket_id: t.ticketId,
+          type: t.type,
+          customer_name: t.customerName,
+          description: t.description,
+          amount: t.amount
+        }]);
+        if (error) throw error;
+        await refreshTransactions();
+      },
+      deleteTransaction: async (id) => {
+        const { error } = await supabase.from('transactions').delete().eq('id', id);
+        if (error) throw error;
+        await refreshTransactions();
+      }
     };
-  }, [authed, products, services]);
+  }, [user, profile, loading, products, services, transactions, permissions]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

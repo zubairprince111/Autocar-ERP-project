@@ -25,72 +25,36 @@ import { Search, Pencil, Trash2, ShieldCheck, ReceiptText, Car, ShoppingBag } fr
 import { toast } from "sonner";
 
 export default function Transactions() {
-  const { services, updateService, deleteService } = useApp();
+  const { transactions, deleteTransaction, checkPermission } = useApp();
   const [filter, setFilter] = useState<"All" | "Services" | "Sales">("All");
   const [query, setQuery] = useState("");
   
-  // Security state
-  const [authAction, setAuthAction] = useState<{ type: "edit" | "delete"; ticket: ServiceTicket } | null>(null);
-  const [password, setPassword] = useState("");
-  const [isAuthed, setIsAuthed] = useState(false);
+  const canDelete = checkPermission("transactions.delete");
 
-  // Edit state
-  const [editingTicket, setEditingTicket] = useState<ServiceTicket | null>(null);
-  const [editForm, setEditForm] = useState({
-    issue: "",
-    status: "" as ServiceStatus,
-    customer: "",
-  });
+  const [deleteId, setDeleteId] = useState<number | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
-    return [...services].reverse().filter((s) => {
-      const isSale = s.carPlate === "SALE";
+    return [...transactions].filter((t) => {
       const matchesFilter = 
         filter === "All" || 
-        (filter === "Services" && !isSale) || 
-        (filter === "Sales" && isSale);
+        (filter === "Services" && t.type === "Service") || 
+        (filter === "Sales" && t.type === "Sale");
       
       const matchesQuery = 
-        s.ticketId.toLowerCase().includes(q) ||
-        s.carPlate.toLowerCase().includes(q) ||
-        (s.customer || "").toLowerCase().includes(q) ||
-        s.issue.toLowerCase().includes(q);
+        (t.ticketId || "").toLowerCase().includes(q) ||
+        t.customerName.toLowerCase().includes(q) ||
+        t.description.toLowerCase().includes(q);
         
       return matchesFilter && matchesQuery;
     });
-  }, [services, filter, query]);
+  }, [transactions, filter, query]);
 
-  const handleAuth = () => {
-    if (password === "admin") {
-      setIsAuthed(true);
-      const action = authAction;
-      setAuthAction(null);
-      setPassword("");
-
-      if (action?.type === "delete") {
-        deleteService(action.ticket.ticketId);
-        toast.success("Transaction deleted");
-        setIsAuthed(false);
-      } else if (action?.type === "edit") {
-        setEditingTicket(action.ticket);
-        setEditForm({
-          issue: action.ticket.issue,
-          status: action.ticket.status,
-          customer: action.ticket.customer || "",
-        });
-      }
-    } else {
-      toast.error("Incorrect password");
-    }
-  };
-
-  const handleSaveEdit = () => {
-    if (editingTicket) {
-      updateService(editingTicket.ticketId, editForm);
-      toast.success("Transaction updated");
-      setEditingTicket(null);
-      setIsAuthed(false);
+  const handleDelete = async () => {
+    if (deleteId) {
+      await deleteTransaction(deleteId);
+      toast.success("Transaction removed from logs");
+      setDeleteId(null);
     }
   };
 
@@ -136,13 +100,13 @@ export default function Transactions() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {filtered.map((s) => {
-                const isSale = s.carPlate === "SALE";
+              {filtered.map((t) => {
+                const isSale = t.type === "Sale";
                 return (
-                  <tr key={s.ticketId} className="hover:bg-secondary/40">
+                  <tr key={t.id} className="hover:bg-secondary/40">
                     <td className="px-4 py-3">
-                      <p className="font-mono text-xs font-medium">{s.ticketId}</p>
-                      <p className="text-[10px] text-muted-foreground mt-0.5">{s.createdAt}</p>
+                      <p className="font-mono text-xs font-medium">{t.ticketId || "N/A"}</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{t.createdAt}</p>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -155,35 +119,28 @@ export default function Transactions() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <p className="font-medium">{s.customer || "Walk-in"}</p>
-                      {!isSale && <p className="text-[10px] text-muted-foreground">{s.carPlate}</p>}
+                      <p className="font-medium">{t.customerName}</p>
                     </td>
                     <td className="px-4 py-3 max-w-xs truncate">
-                      <p className="truncate" title={s.issue}>{s.issue}</p>
+                      <p className="truncate" title={t.description}>{t.description}</p>
                     </td>
                     <td className="px-4 py-3 text-center">
                       <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                        {s.status}
+                        Paid
                       </Badge>
                     </td>
                     <td className="px-4 py-3 text-right font-semibold">
-                      {fmt(s.totalCost)}
+                      {fmt(t.amount)}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <div className="inline-flex gap-1">
+                      {canDelete && (
                         <Button 
                           size="icon" variant="ghost" className="h-8 w-8"
-                          onClick={() => setAuthAction({ type: "edit", ticket: s })}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button 
-                          size="icon" variant="ghost" className="h-8 w-8"
-                          onClick={() => setAuthAction({ type: "delete", ticket: s })}
+                          onClick={() => setDeleteId(t.id)}
                         >
                           <Trash2 className="h-3.5 w-3.5 text-destructive" />
                         </Button>
-                      </div>
+                      )}
                     </td>
                   </tr>
                 );
@@ -200,77 +157,17 @@ export default function Transactions() {
         </div>
       </Card>
 
-      {/* Password Prompt Dialog */}
-      <Dialog open={!!authAction} onOpenChange={(o) => { if (!o) { setAuthAction(null); setPassword(""); } }}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ShieldCheck className="h-5 w-5 text-primary" />
-              Admin Verification
-            </DialogTitle>
+            <DialogTitle>Confirm Deletion</DialogTitle>
             <DialogDescription>
-              Please enter the admin password to {authAction?.type} this transaction.
+              Are you sure you want to remove this transaction from the records? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
-          <div className="py-2">
-            <Label className="text-xs">Password</Label>
-            <Input 
-              type="password" 
-              value={password} 
-              onChange={(e) => setPassword(e.target.value)} 
-              placeholder="Enter admin password"
-              onKeyDown={(e) => e.key === "Enter" && handleAuth()}
-              autoFocus
-            />
-          </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => { setAuthAction(null); setPassword(""); }}>Cancel</Button>
-            <Button onClick={handleAuth}>Verify & Proceed</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Dialog */}
-      <Dialog open={!!editingTicket} onOpenChange={(o) => { if (!o) setEditingTicket(null); }}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Edit Transaction Details</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="space-y-2">
-              <Label>Customer Name</Label>
-              <Input 
-                value={editForm.customer} 
-                onChange={(e) => setEditForm({ ...editForm, customer: e.target.value })} 
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Description / Issue</Label>
-              <Input 
-                value={editForm.issue} 
-                onChange={(e) => setEditForm({ ...editForm, issue: e.target.value })} 
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Status</Label>
-              <Select 
-                value={editForm.status} 
-                onValueChange={(v) => setEditForm({ ...editForm, status: v as ServiceStatus })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Pending">Pending</SelectItem>
-                  <SelectItem value="In Progress">In Progress</SelectItem>
-                  <SelectItem value="Completed">Completed</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setEditingTicket(null)}>Cancel</Button>
-            <Button onClick={handleSaveEdit}>Save Changes</Button>
+            <Button variant="ghost" onClick={() => setDeleteId(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDelete}>Delete Permanently</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
